@@ -1,0 +1,389 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  SUSPENDED
+  TERMINATED
+
+  @@map("employee_status")
+}
+
+model departments {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid()) @db.Uuid
+
+  name      String  @unique
+  is_active Boolean @default(true)
+
+  created_by Int?
+  created_at DateTime  @default(now())
+  updated_at DateTime? @updatedAt
+
+  deleted_at DateTime?
+  deleted_by Int?
+
+  employees   employees[]
+  possessions possessions[]
+}
+
+model employees {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid()) @db.Uuid
+
+  employee_no   String         @unique
+  full_name     String
+  department_id Int
+  department    departments    @relation(fields: [department_id], references: [id], onDelete: Restrict)
+  job_title     String?
+  phone         String?
+  email         String?
+  status        EmployeeStatus @default(ACTIVE)
+  joined_at     DateTime?      @db.Date
+  terminated_at DateTime?      @db.Date
+
+  created_by Int?
+  created_at DateTime  @default(now())
+  updated_at DateTime? @updatedAt
+
+  deleted_at DateTime?
+  deleted_by Int?
+
+  possessions      possessions[]
+  incident_reports incident_reports[]
+  documents        documents[]
+  user             users?
+
+  @@index([department_id])
+  @@index([status])
+}
+
+enum ItemOpStatus {
+  IN_SERVICE
+  UNDER_MAINTENANCE
+  OUT_OF_SERVICE
+  RETIRED
+
+  @@map("item_op_status")
+}
+
+enum ItemTechCondition {
+  GOOD
+  NEEDS_REPAIR
+  DAMAGED
+
+  @@map("item_tech_condition")
+}
+
+model custody_types {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid()) @db.Uuid
+
+  name        String  @unique
+  description String?
+  is_active   Boolean @default(true)
+
+  created_by Int?
+  created_at DateTime  @default(now())
+  updated_at DateTime? @updatedAt
+
+  deleted_at DateTime?
+  deleted_by Int?
+
+  items items[]
+}
+
+model items {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid()) @db.Uuid
+
+  serial_no        String            @unique
+  serial_generated Boolean           @default(false)
+  custody_type_id  Int
+  custody_type     custody_types     @relation(fields: [custody_type_id], references: [id], onDelete: Restrict)
+  brand            String?
+  model            String?
+  purchase_date    DateTime?         @db.Date
+  op_status        ItemOpStatus
+  tech_condition   ItemTechCondition
+  opening_balance  Boolean           @default(false)
+  notes            String?
+
+  created_by Int?
+  created_at DateTime  @default(now())
+  updated_at DateTime? @updatedAt
+
+  deleted_at DateTime?
+  deleted_by Int?
+
+  possessions      possessions[]
+  item_events      item_events[]
+  incident_reports incident_reports[]
+
+  @@index([custody_type_id])
+  @@index([op_status])
+  @@index([tech_condition])
+}
+
+enum ItemEventType {
+  HANDOVER
+  RETURN
+  STATUS_CHANGE
+
+  @@map("item_event_type")
+}
+
+model item_events {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid()) @db.Uuid
+
+  item_id            Int
+  item               items             @relation(fields: [item_id], references: [id], onDelete: Restrict)
+  event_type         ItemEventType
+  op_status_before   ItemOpStatus
+  op_status_after    ItemOpStatus
+  condition_before   ItemTechCondition
+  condition_after    ItemTechCondition
+  reason             String?
+  occurred_at        DateTime
+  recorded_at        DateTime          @default(now())
+  document_id        Int?
+  document           documents?        @relation(fields: [document_id], references: [id], onDelete: Restrict)
+  report_id          Int?
+  report             incident_reports? @relation(fields: [report_id], references: [id], onDelete: Restrict)
+  performed_by       Int?
+  performer          users?            @relation(fields: [performed_by], references: [id], onDelete: Restrict)
+  started_possession possessions?      @relation("PossessionStartEvent")
+  ended_possession   possessions?      @relation("PossessionEndEvent")
+
+  @@index([item_id, occurred_at])
+  @@index([event_type])
+  @@index([occurred_at])
+  @@index([document_id])
+  @@index([report_id])
+  @@index([performed_by])
+}
+
+model possessions {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid()) @db.Uuid
+
+  item_id            Int
+  item               items              @relation(fields: [item_id], references: [id], onDelete: Restrict)
+  employee_id        Int
+  employee           employees          @relation(fields: [employee_id], references: [id], onDelete: Restrict)
+  department_id      Int
+  department         departments        @relation(fields: [department_id], references: [id], onDelete: Restrict)
+  start_event_id     Int                @unique
+  start_event        item_events        @relation("PossessionStartEvent", fields: [start_event_id], references: [id], onDelete: Restrict)
+  end_event_id       Int?               @unique
+  end_event          item_events?       @relation("PossessionEndEvent", fields: [end_event_id], references: [id], onDelete: Restrict)
+  started_at         DateTime
+  ended_at           DateTime?
+  end_reason         String?
+  due_date           DateTime?          @db.Date
+  accessories        String?
+  condition_at_start ItemTechCondition
+  condition_at_end   ItemTechCondition?
+  notes              String?
+
+  created_by Int?
+  created_at DateTime  @default(now())
+  updated_at DateTime? @updatedAt
+
+  @@unique([item_id], map: "possessions_one_open_per_item_key", where: { ended_at: null })
+  @@index([item_id])
+  @@index([employee_id])
+  @@index([department_id])
+  @@index([started_at])
+}
+
+enum IncidentReportType {
+  LOSS
+  DAMAGE
+  THEFT
+  MALFUNCTION
+
+  @@map("incident_report_type")
+}
+
+enum IncidentReportStatus {
+  OPEN
+  RESOLVED
+
+  @@map("incident_report_status")
+}
+
+model incident_reports {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid()) @db.Uuid
+
+  item_id     Int
+  item        items                @relation(fields: [item_id], references: [id], onDelete: Restrict)
+  employee_id Int
+  employee    employees            @relation(fields: [employee_id], references: [id], onDelete: Restrict)
+  report_type IncidentReportType
+  description String
+  status      IncidentReportStatus @default(OPEN)
+  resolution  String?
+  resolved_at DateTime?
+  resolved_by Int?
+  resolver    users?               @relation(fields: [resolved_by], references: [id], onDelete: Restrict)
+  item_events item_events[]
+
+  created_by Int?
+  created_at DateTime  @default(now())
+  updated_at DateTime? @updatedAt
+
+  deleted_at DateTime?
+  deleted_by Int?
+
+  @@index([item_id])
+  @@index([employee_id])
+  @@index([status])
+  @@index([report_type])
+  @@index([created_at])
+  @@index([resolved_by])
+}
+
+enum DocumentType {
+  HANDOVER_RECEIPT
+  RETURN_RECEIPT
+  CLEARANCE
+  OTHER
+
+  @@map("document_type")
+}
+
+model documents {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid()) @db.Uuid
+
+  doc_no      String        @unique
+  doc_type    DocumentType
+  employee_id Int
+  employee    employees     @relation(fields: [employee_id], references: [id], onDelete: Restrict)
+  issued_at   DateTime
+  issued_by   Int?
+  issuer      users?        @relation("DocumentIssuer", fields: [issued_by], references: [id], onDelete: Restrict)
+  storage_key String        @unique
+  file_name   String
+  mime_type   String
+  size_bytes  Int
+  item_events item_events[]
+
+  created_by Int?
+  creator    users?    @relation("DocumentCreator", fields: [created_by], references: [id], onDelete: Restrict)
+  created_at DateTime  @default(now())
+  updated_at DateTime? @updatedAt
+
+  deleted_at DateTime?
+  deleted_by Int?
+
+  @@index([employee_id])
+  @@index([doc_type])
+  @@index([issued_at])
+  @@index([issued_by])
+  @@index([created_by])
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  STATUS_CHANGE
+  HANDOVER
+  RETURN
+  RESOLVE
+  DELETE
+
+  @@map("audit_action")
+}
+
+enum AuditEntityType {
+  DEPARTMENT
+  EMPLOYEE
+  CUSTODY_TYPE
+  ITEM
+  POSSESSION
+  INCIDENT_REPORT
+  DOCUMENT
+  USER
+  ROLE
+  PERMISSION
+
+  @@map("audit_entity_type")
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+
+  @@map("audit_outcome")
+}
+
+model audit_logs {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid()) @db.Uuid
+
+  user_id     Int?
+  user        users?          @relation(fields: [user_id], references: [id], onDelete: Restrict)
+  action      AuditAction
+  entity_type AuditEntityType
+  entity_id   Int?
+  old_values  Json?
+  new_values  Json?
+  outcome     AuditOutcome
+  error_code  String?
+  ip_address  String?
+  created_at  DateTime        @default(now())
+
+  @@index([entity_type, entity_id])
+  @@index([user_id])
+  @@index([action])
+  @@index([outcome])
+  @@index([created_at])
+}
+
+enum user_role {
+  ADMIN
+  WAREHOUSE_KEEPER
+  AUDITOR
+  EMPLOYEE
+}
+
+model users {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid()) @db.Uuid
+
+  username      String     @unique
+  password_hash String
+  name          String?
+  email         String?
+  phone         String?
+  role          user_role  @default(EMPLOYEE)
+  employee_id   Int?       @unique
+  employee      employees? @relation(fields: [employee_id], references: [id], onDelete: Restrict)
+  is_active     Boolean    @default(true)
+
+  created_by Int?
+  created_at DateTime  @default(now())
+  updated_at DateTime? @updatedAt
+
+  deleted_at DateTime?
+  deleted_by Int?
+
+  audit_logs       audit_logs[]
+  item_events      item_events[]
+  incident_reports incident_reports[]
+  documents        documents[]        @relation("DocumentCreator")
+  issued_documents documents[]        @relation("DocumentIssuer")
+
+  @@index([role])
+}
